@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Toddler Dresser - Santa Clara</title>
+    <!-- html2canvas library for capturing DOM elements -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -32,8 +34,6 @@
             color: #64748b;
             margin-bottom: 25px;
         }
-        
-        /* NEW: Distinct container for each session */
         .session-block {
             background: #f8fafc;
             border: 1px solid #e2e8f0;
@@ -41,20 +41,60 @@
             padding: 20px;
             margin-bottom: 25px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            position: relative;
         }
-        /* Removed margin-bottom on the last block so it fits nicely */
         .session-block:last-child {
             margin-bottom: 0;
         }
-
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            border-left: 4px solid #3b82f6;
+            padding-left: 10px;
+        }
         .section-title {
             text-align: left;
-            font-size: 17px;
+            font-size: 16px;
             font-weight: bold;
             color: #334155;
-            margin: 0 0 15px 0;
-            padding-left: 10px;
-            border-left: 4px solid #3b82f6;
+            margin: 0;
+        }
+        .btn-group {
+            display: flex;
+            gap: 6px;
+        }
+        .action-btn {
+            border: none;
+            padding: 6px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .action-btn:active {
+            transform: scale(0.96);
+        }
+        .save-btn {
+            background-color: #10b981;
+            color: white;
+            box-shadow: 0 2px 5px rgba(16, 185, 129, 0.25);
+        }
+        .save-btn:hover {
+            background-color: #059669;
+        }
+        .share-btn {
+            background-color: #3b82f6;
+            color: white;
+            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.25);
+        }
+        .share-btn:hover {
+            background-color: #2563eb;
         }
         .weather-info {
             background: #ffffff;
@@ -138,12 +178,103 @@
 const LAT = 37.3541;
 const LON = -121.9552;
 
+// --- Helper to generate safe filename with AM/PM Timestamp ---
+function generateFileName(titleText) {
+    const cleanTitle = titleText.split('/')[0].replace(/[^a-zA-Z0-9]/g, '-').trim();
+    const laDate = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
+    
+    let hours = laDate.getHours();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12; // the hour '0' should be '12'
+    
+    const minutes = String(laDate.getMinutes()).padStart(2, '0');
+    const month = String(laDate.getMonth() + 1).padStart(2, '0');
+    const day = String(laDate.getDate()).padStart(2, '0');
+    const year = laDate.getFullYear();
+    
+    const timestamp = `${year}-${month}-${day}_${hours}-${minutes}${ampm}`;
+    return `Toddler-Dresser-${cleanTitle}_${timestamp}.png`;
+}
+
+// --- Screen Capture Utility ---
+async function captureBlockToBlob(blockId) {
+    const element = document.getElementById(blockId);
+    if (!element) return null;
+    const canvas = await html2canvas(element, {
+        scale: 2, // High resolution for retina screens
+        backgroundColor: '#f8fafc',
+        useCORS: true
+    });
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+}
+
+// --- Save Action: Directly Downloads the PNG ---
+async function saveSection(blockId, titleText) {
+    const element = document.getElementById(blockId);
+    if (!element) return;
+    const btn = element.querySelector('.save-btn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳...';
+
+    try {
+        const blob = await captureBlockToBlob(blockId);
+        if (blob) {
+            const fileName = generateFileName(titleText);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    } catch (err) {
+        console.error("Save error:", err);
+        alert("Failed to save image.");
+    } finally {
+        btn.innerHTML = originalText;
+    }
+}
+
+// --- Share Action: Triggers Native Share Sheet ---
+async function shareSection(blockId, titleText) {
+    const element = document.getElementById(blockId);
+    if (!element) return;
+    const btn = element.querySelector('.share-btn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳...';
+
+    try {
+        const blob = await captureBlockToBlob(blockId);
+        if (blob) {
+            const fileName = generateFileName(titleText);
+            const file = new File([blob], fileName, { type: 'image/png' });
+
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                await navigator.share({
+                    files: [file],
+                    title: 'Toddler Clothing Recommendation',
+                    text: 'Here is the clothing recommendation for Santa Clara!'
+                });
+            } else {
+                alert("Native file sharing is not supported on this browser/device. Saving image instead...");
+                await saveSection(blockId, titleText);
+            }
+        }
+    } catch (err) {
+        console.log('User cancelled share or share failed:', err);
+    } finally {
+        btn.innerHTML = originalText;
+    }
+}
+
 // --- Temperature-to-clothing lookup matrix ---
 function getClothingRecommendation(temp, windSpeed, cloudCover, targetDate) {
     const isStrongWind = windSpeed > 12;
     const isCloudy = cloudCover > 50;
     
-    // getMonth() returns 0-11, so we add 1 to match standard calendar months
     const month = targetDate.getMonth() + 1; 
 
     let top = ""; let bottoms = ""; let shoes = "";
@@ -154,46 +285,28 @@ function getClothingRecommendation(temp, windSpeed, cloudCover, targetDate) {
         shoes = "Sandals / 凉鞋";
     } else if (temp >= 75 && temp <= 80) {
         if (isStrongWind || isCloudy) {
-            top = "Short sleeve / 短袖"; 
-            bottoms = "Thin long pants / 薄长裤"; 
-            shoes = "Sandals / 凉鞋";
+            top = "Short sleeve / 短袖"; bottoms = "Thin long pants / 薄长裤"; shoes = "Sandals / 凉鞋";
         } else {
-            top = "Short sleeve / 短袖"; 
-            bottoms = "Shorts / 短裤"; 
-            shoes = "Sandals / 凉鞋";
+            top = "Short sleeve / 短袖"; bottoms = "Shorts / 短裤"; shoes = "Sandals / 凉鞋";
         }
     } else if (temp >= 70 && temp < 75) {
-        top = "Short sleeve / 短袖"; 
-        bottoms = "Thin long pants / 薄长裤"; 
-        shoes = "Sandals / 凉鞋";
+        top = "Short sleeve / 短袖"; bottoms = "Thin long pants / 薄长裤"; shoes = "Sandals / 凉鞋";
     } else if (temp >= 65 && temp < 70) {
         if (month >= 6 && month <= 9) {
-            top = "Short sleeve + Vest / 短袖+马甲"; 
-            bottoms = "Thin long pants / 薄长裤"; 
-            shoes = "Sandals + Socks / 凉鞋+袜子";
+            top = "Short sleeve + Vest / 短袖+马甲"; bottoms = "Thin long pants / 薄长裤"; shoes = "Sandals + Socks / 凉鞋+袜子";
         } else if (month === 5 || month === 10) {
-            top = "Long sleeve / 长袖"; 
-            bottoms = "Thin long pants / 薄长裤"; 
-            shoes = "Sneakers / 运动鞋";
+            top = "Long sleeve / 长袖"; bottoms = "Thin long pants / 薄长裤"; shoes = "Sneakers / 运动鞋";
         } else {
-            top = "Long sleeve / 长袖"; 
-            bottoms = "Standard thickness long pants / 标准厚度长裤"; 
-            shoes = "Sneakers / 运动鞋";
+            top = "Long sleeve / 长袖"; bottoms = "Standard thickness long pants / 标准厚度长裤"; shoes = "Sneakers / 运动鞋";
         }
     } else if (temp >= 55 && temp < 65) {
         if (month >= 6 && month <= 9) {
-            top = "Long sleeve + Vest / 长袖+马甲"; 
-            bottoms = "Thin long pants / 薄长裤"; 
-            shoes = "Sneakers / 运动鞋";
+            top = "Long sleeve + Vest / 长袖+马甲"; bottoms = "Thin long pants / 薄长裤"; shoes = "Sneakers / 运动鞋";
         } else {
-            top = "Long sleeve shirt + Sports jacket / 长袖衬衣+运动服"; 
-            bottoms = "Medium thickness long pants / 中等厚度长裤"; 
-            shoes = "Sneakers / 运动鞋";
+            top = "Long sleeve shirt + Sports jacket / 长袖衬衣+运动服"; bottoms = "Medium thickness long pants / 中等厚度长裤"; shoes = "Sneakers / 运动鞋";
         }
     } else { // < 55F
-        top = "Long sleeve shirt + Vest + Thick jacket / 长袖衬衣+马甲+最厚运动服"; 
-        bottoms = "Thick winter pants / 最厚裤子"; 
-        shoes = "Sneakers / 运动鞋";
+        top = "Long sleeve shirt + Vest + Thick jacket / 长袖衬衣+马甲+最厚运动服"; bottoms = "Thick winter pants / 最厚裤子"; shoes = "Sneakers / 运动鞋";
     }
 
     return { top, bottoms, shoes };
@@ -261,8 +374,7 @@ function averagePeriods(periods) {
         const hourStr = hourObj.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
 
         hourlyDetails.push({
-            time: hourStr,
-            temp: temp,
+            time: hourStr, temp: temp,
             windStatusEN: wind > 12 ? "Strong" : "Calm",
             windStatusCN: wind > 12 ? "大风" : "微/无风",
             cloudStatusEN: clouds > 50 ? "Cloudy" : "Sunny",
@@ -272,14 +384,11 @@ function averagePeriods(periods) {
 
     const n = periods.length;
     return { 
-        temp: totalTemp / n, 
-        wind: totalWind / n, 
-        clouds: totalClouds / n,
-        hourlyDetails: hourlyDetails
+        temp: totalTemp / n, wind: totalWind / n, clouds: totalClouds / n, hourlyDetails: hourlyDetails
     };
 }
 
-function generateHTMLBlock(title, temp, wind, clouds, rec, hourlyDetails = []) {
+function generateHTMLBlock(blockId, title, temp, wind, clouds, rec, hourlyDetails = []) {
     const tempC = Math.round((temp - 32) * 5 / 9);
     const windStatusEN = wind > 12 ? "Strong" : "Calm";
     const windStatusCN = wind > 12 ? "大风" : "微/无风";
@@ -298,10 +407,19 @@ function generateHTMLBlock(title, temp, wind, clouds, rec, hourlyDetails = []) {
         hourlyHTML += `</div>`;
     }
 
-    // Wrapped everything in a .session-block to cleanly separate the three periods
     return `
-        <div class="session-block">
-            <div class="section-title">${title}</div>
+        <div class="session-block" id="${blockId}">
+            <div class="section-header">
+                <div class="section-title">${title}</div>
+                <div class="btn-group" data-html2canvas-ignore>
+                    <button class="action-btn save-btn" onclick="saveSection('${blockId}', '${title}')">
+                        💾 Save
+                    </button>
+                    <button class="action-btn share-btn" onclick="shareSection('${blockId}', '${title}')">
+                        📤 Share
+                    </button>
+                </div>
+            </div>
             
             <div class="weather-info">
                 <div class="avg-weather">
@@ -331,20 +449,17 @@ async function updateDresserApp() {
             Current Time / 当前时间:<br><strong>${laDate.toLocaleString('en-US', timeOptions)} (CA)</strong>
         `;
 
-        // 1. Get NWS points data
         const pointsResp = await fetch(`https://api.weather.gov/points/${LAT},${LON}`);
         if (!pointsResp.ok) throw new Error(`NWS points API error: ${pointsResp.status}`);
         const pointsData = await pointsResp.json();
         const forecastHourlyUrl = pointsData.properties.forecastHourly;
         const stationsUrl = pointsData.properties.observationStations;
 
-        // 2. Fetch NWS hourly forecast
         const hourlyResp = await fetch(forecastHourlyUrl);
         if (!hourlyResp.ok) throw new Error(`NWS hourly forecast error: ${hourlyResp.status}`);
         const hourlyData = await hourlyResp.json();
         const periods = hourlyData.properties.periods;
 
-        // 3. Current weather from live observation station
         let curTemp = null, curWind = null, curClouds = null;
         try {
             const stationsResp = await fetch(stationsUrl);
@@ -358,9 +473,7 @@ async function updateDresserApp() {
                 curWind = (obsProps.windSpeed && obsProps.windSpeed.value !== null) ? kmhToMph(obsProps.windSpeed.value) : 0;
                 curClouds = cloudPercentFromLayers(obsProps.cloudLayers);
             }
-        } catch (e) {
-            // Fall back to hourly forecast if station fails
-        }
+        } catch (e) {}
 
         if (curTemp === null) {
             const p0 = periods[0];
@@ -370,26 +483,24 @@ async function updateDresserApp() {
         }
 
         const curRec = getClothingRecommendation(curTemp, curWind, curClouds, laDate);
-        let finalHTML = generateHTMLBlock("Right Now / 当前", curTemp, curWind, curClouds, curRec);
+        let finalHTML = generateHTMLBlock("block-current", "Right Now / 当前", curTemp, curWind, curClouds, curRec);
 
-        // 4. Session logic mapping
         const currentHour = laDate.getHours();
         const todayStr = laDate.toDateString();
-        
         const tomorrowDate = new Date(laDate);
         tomorrowDate.setDate(tomorrowDate.getDate() + 1);
         const tomorrowStr = tomorrowDate.toDateString();
 
         let session1, session2;
         if (currentHour < 9) {
-            session1 = { label: "Next: Today Morning / 今天上午 (9AM - 11AM)", dateStr: todayStr, hours: [9, 10] };
-            session2 = { label: "Then: Today Afternoon / 今天下午 (4PM - 6PM)", dateStr: todayStr, hours: [16, 17] };
+            session1 = { id: "block-session1", label: "Next: Today Morning / 今天上午", dateStr: todayStr, hours: [9, 10] };
+            session2 = { id: "block-session2", label: "Then: Today Afternoon / 今天下午", dateStr: todayStr, hours: [16, 17] };
         } else if (currentHour < 16) {
-            session1 = { label: "Next: Today Afternoon / 今天下午 (4PM - 6PM)", dateStr: todayStr, hours: [16, 17] };
-            session2 = { label: "Then: Tomorrow Morning / 明天上午 (9AM - 11AM)", dateStr: tomorrowStr, hours: [9, 10] };
+            session1 = { id: "block-session1", label: "Next: Today Afternoon / 今天下午", dateStr: todayStr, hours: [16, 17] };
+            session2 = { id: "block-session2", label: "Then: Tomorrow Morning / 明天上午", dateStr: tomorrowStr, hours: [9, 10] };
         } else {
-            session1 = { label: "Next: Tomorrow Morning / 明天上午 (9AM - 11AM)", dateStr: tomorrowStr, hours: [9, 10] };
-            session2 = { label: "Then: Tomorrow Afternoon / 明天下午 (4PM - 6PM)", dateStr: tomorrowStr, hours: [16, 17] };
+            session1 = { id: "block-session1", label: "Next: Tomorrow Morning / 明天上午", dateStr: tomorrowStr, hours: [9, 10] };
+            session2 = { id: "block-session2", label: "Then: Tomorrow Afternoon / 明天下午", dateStr: tomorrowStr, hours: [16, 17] };
         }
 
         [session1, session2].forEach(session => {
@@ -399,7 +510,7 @@ async function updateDresserApp() {
 
             if (matched.length === 0) {
                 finalHTML += `
-                    <div class="session-block">
+                    <div class="session-block" id="${session.id}">
                         <div class="section-title">${session.label}</div>
                         <div class="weather-info">Forecast data not yet available for this window / 该时段暂无预报数据</div>
                     </div>
@@ -411,7 +522,7 @@ async function updateDresserApp() {
             const sessionDate = new Date(session.dateStr);
             const rec = getClothingRecommendation(avg.temp, avg.wind, avg.clouds, sessionDate);
             
-            finalHTML += generateHTMLBlock(session.label, avg.temp, avg.wind, avg.clouds, rec, avg.hourlyDetails);
+            finalHTML += generateHTMLBlock(session.id, session.label, avg.temp, avg.wind, avg.clouds, rec, avg.hourlyDetails);
         });
 
         document.getElementById('app-content').innerHTML = finalHTML;
