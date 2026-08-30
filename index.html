@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toddler Dresser - Santa Clara</title>
+    <title>Toddler Dresser Weather</title>
     <!-- html2canvas library for capturing DOM elements -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
@@ -28,7 +28,35 @@
             max-width: 500px;
             text-align: center;
         }
-        h1 { margin-top: 0; font-size: 24px; color: #1e293b; margin-bottom: 8px; }
+        h1 { margin-top: 0; font-size: 24px; color: #1e293b; margin-bottom: 16px; }
+        
+        /* Location Tabs CSS */
+        .location-tabs {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .tab-btn {
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            color: #475569;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            background: #e2e8f0;
+        }
+        .tab-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
         .current-time {
             font-size: 15px;
             color: #64748b;
@@ -175,17 +203,46 @@
 
 <div class="main-card">
     <h1>👗 Toddler Dresser / 穿衣助手</h1>
+    
+    <!-- Location Toggle Tabs -->
+    <div class="location-tabs">
+        <button class="tab-btn active" data-key="santa_clara" onclick="switchLocation('santa_clara')">Santa Clara</button>
+        <button class="tab-btn" data-key="los_altos" onclick="switchLocation('los_altos')">Los Altos (Mora Dr)</button>
+    </div>
+
     <div id="time-display" class="current-time">Loading time...</div>
 
     <div id="app-content">
-        <div class="loading">Fetching Santa Clara weather / 正在获取天气信息...</div>
+        <div class="loading">Fetching weather / 正在获取天气信息...</div>
     </div>
 </div>
 
 <script>
-// Santa Clara, CA Coordinates
-const LAT = 37.3541;
-const LON = -121.9552;
+// --- Location Configurations ---
+const LOCATIONS = {
+    "santa_clara": { name: "Santa Clara", lat: 37.3541, lon: -121.9552 },
+    "los_altos": { name: "Los Altos", lat: 37.3420, lon: -122.0860 } // Approx coordinates for 11311 Mora Dr
+};
+let currentLocKey = "santa_clara";
+
+// --- Location Switcher ---
+function switchLocation(key) {
+    if (currentLocKey === key) return; // Ignore if already selected
+    currentLocKey = key;
+    
+    // Update tab styles
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.key === key);
+    });
+
+    // Show loading state for the new location
+    document.getElementById('app-content').innerHTML = `
+        <div class="loading">Fetching ${LOCATIONS[key].name} weather / 正在获取天气信息...</div>
+    `;
+    
+    // Fetch new weather data
+    updateDresserApp();
+}
 
 // --- Helper to format date and day of week in both languages ---
 function getBilingualDateInfo(dateObj) {
@@ -194,8 +251,9 @@ function getBilingualDateInfo(dateObj) {
     return `${en} | ${zh}`;
 }
 
-// --- Helper to generate safe filename with AM/PM Timestamp ---
+// --- Helper to generate safe filename with Location and Timestamp ---
 function generateFileName(titleText) {
+    const locName = LOCATIONS[currentLocKey].name.replace(/\s+/g, '');
     const cleanTitle = titleText.split('/')[0].replace(/[^a-zA-Z0-9]/g, '-').trim();
     const laDate = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" }));
     
@@ -210,7 +268,7 @@ function generateFileName(titleText) {
     const year = laDate.getFullYear();
     
     const timestamp = `${year}-${month}-${day}_${hours}-${minutes}${ampm}`;
-    return `Toddler-Dresser-${cleanTitle}_${timestamp}.png`;
+    return `Toddler-Dresser-${locName}-${cleanTitle}_${timestamp}.png`;
 }
 
 // --- Screen Capture Utility ---
@@ -267,12 +325,13 @@ async function shareSection(blockId, titleText) {
         if (blob) {
             const fileName = generateFileName(titleText);
             const file = new File([blob], fileName, { type: 'image/png' });
+            const locName = LOCATIONS[currentLocKey].name;
 
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
                 await navigator.share({
                     files: [file],
-                    title: 'Toddler Clothing Recommendation',
-                    text: 'Here is the clothing recommendation for Santa Clara!'
+                    title: `Toddler Clothing Recommendation - ${locName}`,
+                    text: `Here is the clothing recommendation for ${locName}!`
                 });
             } else {
                 alert("Native file sharing is not supported on this browser/device. Saving image instead...");
@@ -290,7 +349,6 @@ async function shareSection(blockId, titleText) {
 function getClothingRecommendation(temp, windSpeed, cloudCover, targetDate) {
     const isStrongWind = windSpeed > 12;
     const isCloudy = cloudCover > 50;
-    
     const month = targetDate.getMonth() + 1; 
 
     let top = ""; let bottoms = ""; let shoes = "";
@@ -460,6 +518,7 @@ function generateHTMLBlock(blockId, title, subtitle, temp, wind, clouds, rec, ho
 
 async function updateDresserApp() {
     try {
+        const loc = LOCATIONS[currentLocKey]; // Get the currently selected location
         const laTimeString = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
         const laDate = new Date(laTimeString);
 
@@ -468,7 +527,8 @@ async function updateDresserApp() {
             Current Time / 当前时间:<br><strong>${laDate.toLocaleString('en-US', timeOptions)} (CA)</strong>
         `;
 
-        const pointsResp = await fetch(`https://api.weather.gov/points/${LAT},${LON}`);
+        // Fetch based on active coordinates
+        const pointsResp = await fetch(`https://api.weather.gov/points/${loc.lat},${loc.lon}`);
         if (!pointsResp.ok) throw new Error(`NWS points API error: ${pointsResp.status}`);
         const pointsData = await pointsResp.json();
         const forecastHourlyUrl = pointsData.properties.forecastHourly;
@@ -562,6 +622,7 @@ async function updateDresserApp() {
     }
 }
 
+// Initial Load
 updateDresserApp();
 </script>
 
